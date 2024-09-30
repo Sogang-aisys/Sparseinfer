@@ -1,5 +1,5 @@
 # SparseInfer: Training-free Prediction of Activation
-Sparsity for Fast LLM Inference
+Fast LLM inference with low-overhead sparsity predictor and sparse kernels.
 
 ![llama](image/overview.png)
 
@@ -32,7 +32,22 @@ the state-of-the-art, with negligible accuracy loss of within 1%p
 - [ ] Apply adaptive alpha values per layer to improve accuracy: Sort by (number of positives - number of negatives), and predict 0 for a certain proportion.
 
 
+## Installation
 
+### Download
+``` bash
+git clone https://github.com/simpack0513/SparseInfer.git
+cd SparseInfer
+```
+
+### Build
+``` bash
+mkdir build
+cd build
+cmake .. -DLLAMA_CUDA=ON -DLLAMA_CUDA_MMV_Y=16
+
+
+```
 
 
 

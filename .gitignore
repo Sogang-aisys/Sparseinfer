@@ -38,6 +38,9 @@ build*
 cmake-build-*
 out/
 tmp/
+!build-info.cmake
+!build-info.cpp.in
+!build-info.sh
 
 models/*
 models-mnt
