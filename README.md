@@ -45,8 +45,11 @@ cd SparseInfer
 mkdir build
 cd build
 cmake .. -DLLAMA_CUDA=ON -DLLAMA_CUDA_MMV_Y=16
-
-
+```
+After this, change the directory to bin and run make 
+```
+cd bin
+make
 ```
 
 
