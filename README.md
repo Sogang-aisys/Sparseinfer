@@ -45,9 +45,9 @@ cd SparseInfer
 mkdir build
 cd build
 cmake .. -DLLAMA_CUDA=ON -DLLAMA_CUDA_MMV_Y=16
-
-
+cmake --build . --config Release -j 10
 ```
+-j : Number of CPUs for build
 
 
 
