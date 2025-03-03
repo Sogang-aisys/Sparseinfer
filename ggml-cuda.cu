@@ -1767,6 +1767,84 @@ static __global__ void mul_mat_vec_sparse_gate(const half * x, const float * y, 
     }
 }
 
+
+static __global__ void mul_mat_vec_sparse_gate_q4_0(
+    const void *vx, // Q4_0 quantized weights
+    const float *y, // Input vector
+    float *dst,
+    int *sparse_idx,
+    int nrows,
+    int ncols)
+{                                                                   // we have (32,16) block size so we have 32 threads in x and 16 threads in y
+                                                                    // 32*16 = 512 threads in a block
+    const int row = (int64_t)blockIdx.y * blockDim.y + threadIdx.y; // blockIdx * 16 + 0 ~ 15
+    if (row >= nrows)
+    {
+        return;
+    }
+
+    const int tid = threadIdx.x; // 0 ~ 31
+
+    // Early return if sparse predictor indicates skip
+    if (sparse_idx[row] == 0)
+    {
+        if (tid == 0)
+        {
+            dst[row] = 0.0f;
+        }
+        return;
+    }
+
+    // Ensure dimensions are multiple of QK4_0
+    assert(ncols % QK4_0 == 0);
+
+    const block_q4_0 *x = (const block_q4_0 *)vx;
+    const int blocks_per_row = ncols / QK4_0;     
+    const int iter_stride = 2 * GGML_CUDA_DMMV_X; /  64
+
+    float tmp = 0.0f;
+
+    // Process blocks of QK4_0 elements
+    for (int i = 0; i < ncols; i += iter_stride)
+    {
+        int col = 0;
+        if (tid < QK4_0 / 2) // if tid < 16 then process the first block
+        {
+            col = i + tid;
+        }
+        else
+        {
+
+            col = i + tid + QK4_0 / 2;
+        }
+
+        const int block_idx = (row * blocks_per_row + col / QK4_0);
+        const int offset_in_block = (i + tid) % (QK4_0 / 2);
+
+        dfloat2 v;
+
+        dequantize_q4_0(x, block_idx, offset_in_block, v);
+
+        // Multiply and accumulate
+        tmp += v.x * y[col];
+        tmp += v.y * y[col + 16];
+
+    }
+    // Reduce partial sums within warp
+    tmp = warp_reduce_sum(tmp);
+
+    // Write result
+    if (tid == 0)
+    {
+        dst[row] = tmp;
+
+        if (tmp < 0.0f)
+        {
+            sparse_idx[row] = 0;
+        }
+    }
+}
+
 static __global__ void dequantize_mul_mat_axpy_sparse(const void * __restrict__ vx, const dfloat * __restrict__ y, float * __restrict__ dst, const int ncols, const int nrows) {
     const int row = blockIdx.y*blockDim.y + threadIdx.y;
     const int tid = threadIdx.x;
@@ -1865,6 +1943,76 @@ static __global__ void mul_mat_vec_sparse_up(const half * x, const float * y, fl
     tmp = warp_reduce_sum(tmp);
 
     if (tid == 0) {
+        dst[row] = tmp;
+    }
+}
+
+static __global__ void mul_mat_vec_sparse_up_q4_0(
+    const void *vx,        // Q4_0 quantized weights
+    const float *y,        // Input vector
+    float *dst,            // Output vector
+    const int *sparse_idx, // Sparsity index
+    const int nrows,       // Number of rows
+    const int ncols        // Number of columns
+)
+{
+    const int row = (int64_t)blockIdx.y * blockDim.y + threadIdx.y;
+    if (row >= nrows)
+    {
+        return;
+    }
+
+    const int tid = threadIdx.x;
+
+    // Early return if sparse predictor indicates skip
+    if (sparse_idx[row] == 0)
+    {
+        if (tid == 0)
+        {
+            dst[row] = 0.0f;
+        }
+        return;
+    }
+
+    // Ensure dimensions are multiple of QK4_0
+    assert(ncols % QK4_0 == 0);
+
+    const block_q4_0 *x = (const block_q4_0 *)vx;
+    const int blocks_per_row = ncols / QK4_0;
+    const int iter_stride = 2 * GGML_CUDA_DMMV_X; // Process 64 elements per iteration
+
+    float tmp = 0.0f;
+
+    // Process blocks of QK4_0 elements
+    for (int i = 0; i < ncols; i += iter_stride)
+    {
+        int col = 0;
+        if (tid < QK4_0 / 2) // if tid < 16 then process the first block
+        {
+            col = i + tid;
+        }
+        else
+        {
+
+            col = i + tid + QK4_0 / 2;
+        }
+        const int block_idx = (row * blocks_per_row + col / QK4_0);
+        const int offset_in_block = (i + tid) % (QK4_0 / 2);
+
+        dfloat2 v;
+        dequantize_q4_0(x, block_idx, offset_in_block, v);
+
+        // Multiply and accumulate
+        tmp += v.x * y[col];
+        tmp += v.y * y[col + 16];
+    }
+
+    // Reduce partial sums within warp
+    tmp = warp_reduce_sum(tmp);
+
+    // Write result
+    if (tid == 0)
+    {
         dst[row] = tmp;
     }
 }
@@ -2264,6 +2412,29 @@ static void ggml_cuda_op_mul_mat_vec_sparse_gate(ggml_backend_cuda_context & ctx
     mul_mat_vec_sparse_gate<<<block_nums, block_dims, 0, stream>>>((half *)src0->data, (float *)src1->data, (float *)dst->data, (int *)src2->data, src0->ne[1], src0->ne[0]);
 }
 
+static void ggml_cuda_op_mul_mat_vec_sparse_gate_q4_0(ggml_backend_cuda_context &ctx, const ggml_tensor *src0, const ggml_tensor *src1, const ggml_tensor *src2, ggml_tensor *dst)
+{
+    ggml_cuda_set_device(0);
+    cudaStream_t stream = ctx.stream(0, 0);
+
+    // Add dimension checks
+    GGML_ASSERT(src0->ne[0] % QK4_0 == 0 && "Input matrix columns must be multiple of QK4_0 (32)");
+
+    const int block_num_y = (src0->ne[1] + 16 - 1) / 16; // 4096 + 16 - 1 / 16 = 256
+    const dim3 block_nums(1, block_num_y, 1);            // (1, 256, 1)
+    const dim3 block_dims(WARP_SIZE, 16, 1);             // (32, 16, 1)
+
+    mul_mat_vec_sparse_gate_q4_0<<<block_nums, block_dims, 0, stream>>>(
+        src0->data,          // Q4_0 quantized weights
+        (float *)src1->data, // Input vector
+        (float *)dst->data,  // Output
+        (int *)src2->data,   // Sparse indices
+        src0->ne[1],         // Number of rows
+        src0->ne[0]          // Number of columns
+    );
+}
+
+
 //mul_mat_vec_sparse
 static void ggml_cuda_op_mul_mat_vec_sparse_up(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * src2, ggml_tensor * dst) {
     ggml_cuda_set_device(0);
@@ -2273,6 +2444,33 @@ static void ggml_cuda_op_mul_mat_vec_sparse_up(ggml_backend_cuda_context & ctx, 
     const dim3 block_dims(WARP_SIZE, 16, 1);
 
     mul_mat_vec_sparse_up<<<block_nums, block_dims, 0, stream>>>((half *)src0->data, (float *)src1->data, (float *)dst->data, (int *)src2->data, src0->ne[1], src0->ne[0]);
+}
+
+static void ggml_cuda_op_mul_mat_vec_sparse_up_q4_0(
+    ggml_backend_cuda_context &ctx,
+    const ggml_tensor *src0, // Q4_0 weights
+    const ggml_tensor *src1, // Input
+    const ggml_tensor *src2, // Sparse index
+    ggml_tensor *dst         // Output
+)
+{
+    ggml_cuda_set_device(0);
+    cudaStream_t stream = ctx.stream(0, 0);
+
+    // Calculate grid and block dimensions
+    const int block_num_y = (src0->ne[1] + 16 - 1) / 16;
+    const dim3 block_nums(1, block_num_y, 1);
+    const dim3 block_dims(WARP_SIZE, 16, 1);
+
+    // Launch kernel
+    mul_mat_vec_sparse_up_q4_0<<<block_nums, block_dims, 0, stream>>>(
+        src0->data,
+        (float *)src1->data,
+        (float *)dst->data,
+        (int *)src2->data,
+        src0->ne[1], // nrows
+        src0->ne[0]  // ncols
+    );
 }
 
 static void ggml_cuda_mul_mat_vec_p021(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst){
