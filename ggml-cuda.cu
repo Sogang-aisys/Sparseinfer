@@ -1880,9 +1880,9 @@ static __global__ void mul_mat_vec_q1(const int32_t * x, const int32_t * y, int 
     }
     count = warp_reduce_sum(count);
     if (tid == 0) {
-        if (count * 100 - (ncols*32 - count) * scale_factor > 0)
-            dst[row] = 0;
-        else
+        //if (count * 100 - (ncols*32 - count) * scale_factor > 0)
+        //    dst[row] = 0;
+        //else
             dst[row] = 1;
     }
 }
@@ -2602,7 +2602,7 @@ static void ggml_cuda_debug(ggml_backend_cuda_context & ctx, const ggml_tensor *
 
     // Debug gate Matrix
     cudaStreamSynchronize(stream);
-    FILE *file = fopen("/ssd/workspace/jiho/prosparse-13B-Y.txt", "a");
+    FILE *file = fopen("/ssd/workspace/hula/debug/test.txt", "a");
 
     int il;
     memcpy(&il, dst->op_params, sizeof(int));
@@ -2620,6 +2620,84 @@ static void ggml_cuda_debug(ggml_backend_cuda_context & ctx, const ggml_tensor *
     fclose(file);
 
     debug_impl<<<5120 / 32, 32, 0, stream>>>((float *)src1->data, (float *) dst->data);
+
+}
+
+static void ggml_cuda_new_debug(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, ggml_tensor * dst) {
+
+    ggml_cuda_set_device(0);
+    cudaStream_t stream = ctx.stream(0, 0);
+    int sz = 1, sz0 = src0->ne[0], sz1 = src0->ne[1];
+    for (int i = 0; i < 4; i++) sz *= src0->ne[i];
+
+    int il;
+    memcpy(&il, dst->op_params, sizeof(int));
+
+    // Debug gate Matrix
+    cudaStreamSynchronize(stream);
+    std::string path = "/ssd/workspace/hula/debug/x/xout"; //hula change file name
+    path += std::to_string(il);
+    std::string csv = ".csv";
+    path += csv;
+    FILE *file = fopen(path.c_str(), "a");
+
+    void* tmp = nullptr;
+    if (src0->type == GGML_TYPE_F32) {
+        tmp = malloc(sz * sizeof(float));
+    } else if (src0->type == GGML_TYPE_F16) {
+        tmp = malloc(sz * sizeof(half));
+    }
+    // Add other types if necessary
+
+    // Copy data from GPU to CPU
+    if (src0->type == GGML_TYPE_F32) {
+        cudaMemcpy(tmp, (float *)src0->data, sz * sizeof(float), cudaMemcpyDeviceToHost);
+    } else if (src0->type == GGML_TYPE_F16) {
+        cudaMemcpy(tmp, (half *)src0->data, sz * sizeof(half), cudaMemcpyDeviceToHost);
+    }
+
+    // Write to file - 1D
+    /*
+    if (src0->type == GGML_TYPE_F32) {
+        for (int i = 0; i < sz-1; i++) {
+            fprintf(file, "%f, ", ((float*)tmp)[i]);
+        }
+        fprintf(file, "%f\n", ((float*)tmp)[sz-1])
+    } else if (src0->type == GGML_TYPE_F16) {
+        for (int i = 0; i < sz-1; i++) {
+            fprintf(file, "%f, ", (float)__half2float(((half*)tmp)[i]));  // Convert half to float for printing
+        }
+        fprintf(file, "%f\n", (float)__half2float(((half*)tmp)[sz-1]))
+    }
+    free(tmp);
+    fclose(file);
+    */
+    // end of 1D
+    
+
+    //hula Write to file - 2D, write sz[0]*sz[1] elements
+    
+    if (src0->type == GGML_TYPE_F32) {
+        for (int i = 0; i < sz/sz0; i++) {
+            for (int j = 0; j < sz0-1; j++) {
+                fprintf(file, "%f, ", ((float*)tmp)[i*sz0+j]);
+            }
+            fprintf(file, "%f\n", ((float*)tmp)[i*sz0+sz0-1]);
+        }
+    } else if (src0->type == GGML_TYPE_F16) {
+        for (int i = 0; i < sz/sz0; i++) {
+            for (int j = 0; j < sz0-1; j++) {
+                fprintf(file, "%f, ", (float)__half2float(((half*)tmp)[i*sz0+j]));  // Convert half to float for printing
+            }
+            fprintf(file, "%f\n", (float)__half2float(((half*)tmp)[i*sz0+sz0-1]));
+        }
+    }
+    free(tmp);
+    fclose(file);
+    
+    //end of 2D
+
+    debug_impl<<<sz / 32, 32, 0, stream>>>((float *)src0->data, (float *) dst->data);
 
 }
 
@@ -2913,6 +2991,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_DEBUG:
             ggml_cuda_debug(ctx, dst->src[0], dst->src[1], dst);
+            break;
+        case GGML_OP_NEW_DEBUG:
+            ggml_cuda_new_debug(ctx, dst->src[0], dst);
             break;
         case GGML_OP_FUSTION_MLP:
             if (dst->src[0]->ne[3] != dst->src[1]->ne[3]) {

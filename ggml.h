@@ -441,6 +441,7 @@ extern "C" {
 
         GGML_OP_MUL_MAT,
         GGML_OP_DEBUG,
+        GGML_OP_NEW_DEBUG,
         GGML_OP_FUSTION_MLP, //fustion_MLP
         GGML_OP_QUANTIZE_Q1, //quantize_q1
         GGML_OP_MUL_MAT_VEC_Q1, //mul_mat_vec_q1
@@ -1168,6 +1169,12 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
             struct ggml_tensor  * b,
+            int il);
+
+    //hula This is new debug kernel
+    GGML_API struct ggml_tensor * ggml_new_debug(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
             int il);
 
     //This is Fustion Kernel of LlamaMLP

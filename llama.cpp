@@ -6228,6 +6228,7 @@ static struct ggml_tensor * llm_build_norm(
     return cur;
 }
 
+bool go[50];
 static struct ggml_tensor * llm_build_ffn(
         struct ggml_context * ctx,
          struct ggml_tensor * cur,
@@ -6244,8 +6245,8 @@ static struct ggml_tensor * llm_build_ffn(
           llm_ffn_gate_type   type_gate,
          const llm_build_cb & cb,
                         int   il) {
-    /*
-    */
+
+    //ggml_new_debug(ctx, cur, il)
     if (cur->ne[1] != 1) {
         struct ggml_tensor * tmp = ggml_mul_mat(ctx, up, cur);
         cb(tmp, "ffn_up", il);
@@ -6317,16 +6318,22 @@ static struct ggml_tensor * llm_build_ffn(
     }
     else {
         //cur = ggml_debug(ctx, gate, cur, il);
-        //커널 분리, h1 희소도 활용 O
+        //if (il == 4) cur = ggml_new_debug(ctx, cur, il); //hula
+
+        // 커널 분리, h1 희소도 활용 O
         // 현재 입력값 양자화
         struct ggml_tensor * q_cur = ggml_quantize_q1(ctx, cur);
         // Sparse index 예측기
-        int scale_factor = 100;
+        int scale_factor = 103;
         if (il < 20)
-            scale_factor = 100;
+            scale_factor = 103;
         struct ggml_tensor * sparse_idx = ggml_mul_mat_vec_q1(ctx, gate_q, q_cur, scale_factor);
         // Gate - h1을 상관하지 않을 때는 up 커널 사용
         struct ggml_tensor * tmp = ggml_mul_mat_vec_sparse_gate(ctx, gate, cur, sparse_idx);
+
+        //ggml_dim_check(cur);
+        //ggml_dim_check(gate);
+
         // ReLU
         tmp = ggml_relu(ctx, tmp);
         // Up
@@ -6336,6 +6343,8 @@ static struct ggml_tensor * llm_build_ffn(
 
         // Down 행렬 Sparse 계산 (전치해서)
         cur = ggml_mul_mat_vec_transpose(ctx, down_t, cur);
+
+        cur = ggml_new_debug(ctx, cur, il);
     }
 
     if (down_b) {

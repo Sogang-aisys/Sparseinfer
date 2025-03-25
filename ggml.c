@@ -2027,7 +2027,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "CROSS_ENTROPY_LOSS_BACK",
 };
 
-static_assert(GGML_OP_COUNT == 83, "GGML_OP_COUNT != 76");
+static_assert(GGML_OP_COUNT == 84, "GGML_OP_COUNT != 76");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -2117,7 +2117,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "cross_entropy_loss_back(x,y)",
 };
 
-static_assert(GGML_OP_COUNT == 83, "GGML_OP_COUNT != 76");
+static_assert(GGML_OP_COUNT == 84, "GGML_OP_COUNT != 76");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -4578,6 +4578,25 @@ struct ggml_tensor * ggml_debug(
     return result;
 }
 
+// ggml_new_debug
+
+struct ggml_tensor * ggml_new_debug(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a,
+        int il) {
+
+    const int64_t ne[4] = { a->ne[0], a->ne[1], a->ne[2], a->ne[3] };
+    struct ggml_tensor * result = ggml_new_tensor(ctx, a->type, 4, ne);
+
+    result->op   = GGML_OP_NEW_DEBUG;
+    result->grad = NULL;
+    result->src[0] = a;
+
+    ggml_set_op_params(result, &il, sizeof(il));
+
+    return result;
+}
+
 //ggml_fusion_MLP
 
 struct ggml_tensor * ggml_fusion_MLP(
@@ -4634,7 +4653,6 @@ struct ggml_tensor * ggml_mul_mat_vec_q1(
         int scale_factor) {
 
     struct ggml_tensor * result = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, a->ne[1], b->ne[1]);
-
     ggml_set_op_params(result, &scale_factor, sizeof(scale_factor));
 
     result->op   = GGML_OP_MUL_MAT_VEC_Q1;
