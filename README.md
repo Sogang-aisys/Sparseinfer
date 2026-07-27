@@ -46,16 +46,16 @@ cmake --build . --config Release -j 10
 If you find SparseInfer useful in your research or use this repository in your work, please consider citing our DATE 2025 paper:
 
 ```bibtex
-@inproceedings{shin2025sparseinfer,
-  title={{SparseInfer}: Training-free Prediction of Activation Sparsity for Fast {LLM} Inference},
+@INPROCEEDINGS{10992997,
   author={Shin, Jiho and Yang, Hoeseok and Yi, Youngmin},
-  booktitle={2025 Design, Automation \& Test in Europe Conference (DATE)},
-  pages={1--7},
+  booktitle={2025 Design, Automation & Test in Europe Conference (DATE)}, 
+  title={SparseInfer: Training-free Prediction of Activation Sparsity for Fast LLM Inference}, 
   year={2025},
-  publisher={IEEE},
-  doi={10.23919/DATE64628.2025.10992997},
-  url={https://doi.org/10.23919/DATE64628.2025.10992997}
-}
+  volume={},
+  number={},
+  pages={1-7},
+  keywords={Training;Degradation;Accuracy;Large language models;Memory management;Europe;Predictive models;Vectors;Computational efficiency;Tuning;Large language models (LLMs);Activation sparsity;Training-free},
+  doi={10.23919/DATE64628.2025.10992997}}
 ```
 
 ## Contact
